@@ -6,7 +6,7 @@
 #include <esp_wifi.h>
 
 // Simulator option: Uncomment to simulate RPM, comment to use CAN bus
-#define SIMULATE_RPM
+//#define SIMULATE_RPM
 
 // Wi-Fi channel for ESP-Now
 #define WIFI_CHANNEL 1
@@ -15,10 +15,12 @@
 uint8_t receiverMacAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // LED Pin Definitions
-#define LED_PIN GPIO_NUM_4  // GPIO4 for WS2812B data line
-#define NUM_LEDS 8          // Number of LEDs in the strip
+#define LED_PIN GPIO_NUM_4      // GPIO4 for WS2812B data line
+#define NUM_LEDS 8              // Number of LEDs in the strip
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
+#define ESPNOW_STATUS_LED GPIO_NUM_2  // GPIO2 for ESP-Now status LED
+#define CAN_STATUS_LED GPIO_NUM_15    // GPIO15 for CAN status LED
 
 // TWAI pin definitions using gpio_num_t
 #define TWAI_TX_PIN GPIO_NUM_5  // GPIO5 for TWAI TX
@@ -31,9 +33,13 @@ unsigned long lastSendTime = 0;
 const unsigned long sendInterval = 100; // 100ms = 10 Hz for ESP-Now
 
 // LED timing variables
-bool redBlinkState = false;
-unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 100; // 100ms for 5Hz blink (on/off) at 7100+ RPM
+unsigned long lastEspNowBlinkTime = 0;
+unsigned long lastCanBlinkTime = 0;
+const unsigned long espNowBlinkInterval = 200; // 2.5Hz (200ms on/off) for ESP-Now error
+const unsigned long canBlinkInterval = 500;   // 1Hz (500ms on/off) for CAN error
+bool espNowBlinkState = false;
+bool canBlinkState = false;
 
 // RPM simulation timing
 unsigned long lastSimTime = 0;
@@ -46,34 +52,43 @@ const unsigned long debugInterval = 1000; // Debug output every 1s
 uint32_t rxMsgCount = 0; // Count of received messages
 uint32_t errorCount = 0; // Count of CAN errors
 bool canConnected = false; // CAN bus connection status
+bool espNowError = false; // ESP-Now send error status
 
 CRGB leds[NUM_LEDS];
 uint16_t rpm = 0; // Current RPM value
+bool ledsChanged = false; // Flag to track if LED state has changed
 
 // Function prototypes
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
 void updateLEDs();
+void updateStatusLEDs();
 void simulateRPM();
 
 void setup() {
   Serial.begin(115200);
-  delay(1000); // Wait for Serial to initialize
+  
+  // Initialize status LEDs
+  pinMode(ESPNOW_STATUS_LED, OUTPUT);
+  pinMode(CAN_STATUS_LED, OUTPUT);
+  digitalWrite(ESPNOW_STATUS_LED, LOW);
+  digitalWrite(CAN_STATUS_LED, LOW);
 
   // Initialize FastLED
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(75); // Brightness set to 75 (0-255)
+  FastLED.setBrightness(75);
 
   // Initialize Wi-Fi in station mode
   WiFi.mode(WIFI_STA);
   if (esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
     Serial.println("Failed to set Wi-Fi channel");
+    espNowError = true;
     while (1);
   }
-  delay(100); // Small delay to ensure Wi-Fi stability
 
   // Initialize ESP-Now
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-Now");
+    espNowError = true;
     while (1);
   }
 
@@ -88,6 +103,7 @@ void setup() {
   peerInfo.ifidx = WIFI_IF_STA;
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
     Serial.println("Failed to add peer");
+    espNowError = true;
     while (1);
   }
   Serial.println("ESP-Now peer added");
@@ -100,15 +116,17 @@ void setup() {
   
   if (twai_driver_install(&g_config, &t_config, &f_config) != ESP_OK) {
     Serial.println("Failed to install TWAI driver");
+    canConnected = false;
     while (1);
   }
   
   if (twai_start() != ESP_OK) {
     Serial.println("Failed to start TWAI");
+    canConnected = false;
     while (1);
   }
   Serial.println("TWAI initialized");
-  canConnected = true; // Set initial CAN connection status
+  canConnected = true;
 #else
   Serial.println("RPM simulation enabled");
 #endif
@@ -150,15 +168,14 @@ void loop() {
     canConnected = true;
   }
 
-  // Check for TWAI message
+  // Check for TWAI message (non-blocking)
   twai_message_t message;
-  esp_err_t result = twai_receive(&message, pdMS_TO_TICKS(10));
+  esp_err_t result = twai_receive(&message, 0); // 0 ticks for non-blocking
   if (result == ESP_OK) {
     rxMsgCount++;
     if (message.identifier == 0x316 && message.data_length_code >= 4) {
-      // Extract RPM (little-endian, unsigned, offset 2, length 2)
-      uint16_t raw_rpm = (message.data[3] << 8) | message.data[2]; // Little-endian: data[2] is LSB, data[3] is MSB
-      rpm = raw_rpm / 6.4; // Apply new RPM formula
+      uint16_t raw_rpm = (message.data[3] << 8) | message.data[2];
+      rpm = raw_rpm / 6.4;
       Serial.printf("CAN Msg: ID=0x%X, DLC=%d, Data=[%02X %02X %02X %02X], RPM=%d\n",
                     message.identifier, message.data_length_code,
                     message.data[0], message.data[1], message.data[2], message.data[3], rpm);
@@ -182,6 +199,9 @@ void loop() {
     esp_err_t result = esp_now_send(receiverMacAddress, (uint8_t *)&rpm, sizeof(rpm));
     if (result != ESP_OK) {
       Serial.println("Error sending RPM data");
+      espNowError = true;
+    } else {
+      espNowError = false; // Clear error on successful send
     }
     lastSendTime = currentTime;
   }
@@ -189,62 +209,93 @@ void loop() {
   // Update LEDs at 10 Hz
   if (currentTime - lastUpdateTime >= updateInterval) {
     updateLEDs();
-    FastLED.show();
+    updateStatusLEDs();
+    if (ledsChanged) {
+      FastLED.show();
+      ledsChanged = false;
+    }
     lastUpdateTime = currentTime;
   }
 }
 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  espNowError = (status != ESP_NOW_SEND_SUCCESS);
   Serial.print("Last Packet Send Status: ");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 void updateLEDs() {
+  static int lastNumPairs = -1;
+  static CRGB lastColor = CRGB(0, 0, 0);
+  static bool lastRedBlinkState = false;
+  bool redBlinkState = false;
+
   CRGB color;
-  
-  // Calculate number of LED pairs to light (0 to 4 pairs)
   int numPairs = constrain(map(rpm, 0, 7100, 0, 4), 0, 4);
-  
+
   // Determine color based on RPM
   if (rpm < 3000) {
-    color = CRGB(0, 0, 0); // Off below 3000 RPM
+    color = CRGB(0, 0, 0);
   } else if (rpm < 6000) {
-    // Solid green from 3000 to 6000 RPM
     color = CRGB(0, 255, 0);
   } else if (rpm <= 7100) {
-    // Fade from green to red (6000 to 7100 RPM)
     uint8_t t = map(rpm, 6000, 7100, 0, 255);
-    uint8_t red = t;
-    uint8_t green = 255 - t; // Scale green down (255 to 0)
-    color = CRGB(red, green, 0);
+    color = CRGB(t, 255 - t, 0);
   } else {
-    // Blink red at 7100+ RPM
-    if (millis() - lastBlinkTime >= blinkInterval) {
-      redBlinkState = !redBlinkState;
-      lastBlinkTime = millis();
+    if (millis() - lastUpdateTime >= blinkInterval) {
+      redBlinkState = !lastRedBlinkState;
+      lastRedBlinkState = redBlinkState;
     }
     color = redBlinkState ? CRGB(255, 0, 0) : CRGB(0, 0, 0);
-    numPairs = 4; // All LEDs blink at 7100+ RPM
+    numPairs = 4;
   }
 
-  // Set LEDs from ends to center based on numPairs
-  for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = CRGB(0, 0, 0); // Default to off
-    if (numPairs >= 1 && (i == 0 || i == 7)) leds[i] = color; // Pair 1: Ends
-    if (numPairs >= 2 && (i == 1 || i == 6)) leds[i] = color; // Pair 2
-    if (numPairs >= 3 && (i == 2 || i == 5)) leds[i] = color; // Pair 3
-    if (numPairs >= 4 && (i == 3 || i == 4)) leds[i] = color; // Pair 4: Center
+  // Only update LEDs if something changed
+  if (numPairs != lastNumPairs || color != lastColor || redBlinkState != lastRedBlinkState) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i] = CRGB(0, 0, 0);
+      if (numPairs >= 1 && (i == 0 || i == 7)) leds[i] = color;
+      if (numPairs >= 2 && (i == 1 || i == 6)) leds[i] = color;
+      if (numPairs >= 3 && (i == 2 || i == 5)) leds[i] = color;
+      if (numPairs >= 4 && (i == 3 || i == 4)) leds[i] = color;
+    }
+    ledsChanged = true;
+    lastNumPairs = numPairs;
+    lastColor = color;
+  }
+}
+
+void updateStatusLEDs() {
+  unsigned long currentTime = millis();
+
+  // ESP-Now status LED: 2.5Hz blink on error
+  if (espNowError) {
+    if (currentTime - lastEspNowBlinkTime >= espNowBlinkInterval) {
+      espNowBlinkState = !espNowBlinkState;
+      digitalWrite(ESPNOW_STATUS_LED, espNowBlinkState ? HIGH : LOW);
+      lastEspNowBlinkTime = currentTime;
+    }
+  } else {
+    digitalWrite(ESPNOW_STATUS_LED, LOW);
+  }
+
+  // CAN status LED: 1Hz blink on error
+  if (!canConnected) {
+    if (currentTime - lastCanBlinkTime >= canBlinkInterval) {
+      canBlinkState = !canBlinkState;
+      digitalWrite(CAN_STATUS_LED, canBlinkState ? HIGH : LOW);
+      lastCanBlinkTime = currentTime;
+    }
+  } else {
+    digitalWrite(CAN_STATUS_LED, LOW);
   }
 }
 
 void simulateRPM() {
-  // Simulate RPM: 1000 to 9000 over 10s, then 9000 to 1000 over 10s (20s cycle)
-  float cycleTime = (millis() % simPeriod) / 1000.0; // Time in seconds (0 to 20s)
+  float cycleTime = (millis() % simPeriod) / 1000.0;
   if (cycleTime <= 10.0) {
-    // Ramp-up: 1000 to 9000
     rpm = 1000 + (uint16_t)(8000 * cycleTime / 10.0);
   } else {
-    // Ramp-down: 9000 to 1000
     rpm = 9000 - (uint16_t)(8000 * (cycleTime - 10.0) / 10.0);
   }
   Serial.print("Simulated RPM: ");
