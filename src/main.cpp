@@ -19,8 +19,7 @@ uint8_t receiverMacAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 #define NUM_LEDS 8              // Number of LEDs in the strip
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
-#define ESPNOW_STATUS_LED GPIO_NUM_2  // GPIO2 for ESP-Now status LED
-#define CAN_STATUS_LED GPIO_NUM_15    // GPIO15 for CAN status LED
+#define STATUS_LED GPIO_NUM_21  // GPIO21 for built-in LED for both ESP-Now and CAN status
 
 // TWAI pin definitions using gpio_num_t
 #define TWAI_TX_PIN GPIO_NUM_5  // GPIO5 for TWAI TX
@@ -34,12 +33,10 @@ const unsigned long sendInterval = 100; // 100ms = 10 Hz for ESP-Now
 
 // LED timing variables
 const unsigned long blinkInterval = 100; // 100ms for 5Hz blink (on/off) at 7100+ RPM
-unsigned long lastEspNowBlinkTime = 0;
-unsigned long lastCanBlinkTime = 0;
+unsigned long lastStatusBlinkTime = 0;
 const unsigned long espNowBlinkInterval = 200; // 2.5Hz (200ms on/off) for ESP-Now error
 const unsigned long canBlinkInterval = 500;   // 1Hz (500ms on/off) for CAN error
-bool espNowBlinkState = false;
-bool canBlinkState = false;
+bool statusBlinkState = false;
 
 // RPM simulation timing
 unsigned long lastSimTime = 0;
@@ -67,11 +64,9 @@ void simulateRPM();
 void setup() {
   Serial.begin(115200);
   
-  // Initialize status LEDs
-  pinMode(ESPNOW_STATUS_LED, OUTPUT);
-  pinMode(CAN_STATUS_LED, OUTPUT);
-  digitalWrite(ESPNOW_STATUS_LED, LOW);
-  digitalWrite(CAN_STATUS_LED, LOW);
+  // Initialize status LED
+  pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(STATUS_LED, LOW);
 
   // Initialize FastLED
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
@@ -268,26 +263,30 @@ void updateLEDs() {
 void updateStatusLEDs() {
   unsigned long currentTime = millis();
 
-  // ESP-Now status LED: 2.5Hz blink on error
-  if (espNowError) {
-    if (currentTime - lastEspNowBlinkTime >= espNowBlinkInterval) {
-      espNowBlinkState = !espNowBlinkState;
-      digitalWrite(ESPNOW_STATUS_LED, espNowBlinkState ? HIGH : LOW);
-      lastEspNowBlinkTime = currentTime;
+  // Status LED on GPIO 21: 
+  // - 2.5Hz blink (200ms on/off) for ESP-Now error only
+  // - 1Hz blink (500ms on/off) for CAN error only
+  // - 0.5Hz blink (1000ms on/off) for both ESP-Now and CAN errors
+  if (espNowError && !canConnected) {
+    if (currentTime - lastStatusBlinkTime >= 1000) { // 0.5Hz for both errors
+      statusBlinkState = !statusBlinkState;
+      digitalWrite(STATUS_LED, statusBlinkState ? HIGH : LOW);
+      lastStatusBlinkTime = currentTime;
+    }
+  } else if (espNowError) {
+    if (currentTime - lastStatusBlinkTime >= espNowBlinkInterval) { // 2.5Hz for ESP-Now error
+      statusBlinkState = !statusBlinkState;
+      digitalWrite(STATUS_LED, statusBlinkState ? HIGH : LOW);
+      lastStatusBlinkTime = currentTime;
+    }
+  } else if (!canConnected) {
+    if (currentTime - lastStatusBlinkTime >= canBlinkInterval) { // 1Hz for CAN error
+      statusBlinkState = !statusBlinkState;
+      digitalWrite(STATUS_LED, statusBlinkState ? HIGH : LOW);
+      lastStatusBlinkTime = currentTime;
     }
   } else {
-    digitalWrite(ESPNOW_STATUS_LED, LOW);
-  }
-
-  // CAN status LED: 1Hz blink on error
-  if (!canConnected) {
-    if (currentTime - lastCanBlinkTime >= canBlinkInterval) {
-      canBlinkState = !canBlinkState;
-      digitalWrite(CAN_STATUS_LED, canBlinkState ? HIGH : LOW);
-      lastCanBlinkTime = currentTime;
-    }
-  } else {
-    digitalWrite(CAN_STATUS_LED, LOW);
+    digitalWrite(STATUS_LED, LOW); // No errors, LED off
   }
 }
 
