@@ -55,6 +55,26 @@ CRGB leds[NUM_LEDS];
 uint16_t rpm = 0; // Current RPM value
 bool ledsChanged = false; // Flag to track if LED state has changed
 
+// CAN signal variables
+uint8_t coolantTemp = 0;          // CAN ID 329: Byte 2, bits 0-7
+uint8_t angleFgrPedal = 0;       // CAN ID 329: Byte 5, bits 0-7
+uint8_t driverDemand = 0;        // CAN ID 329: Byte 6, bits 0-7
+bool checkEngineLight = false;   // CAN ID 545: Byte 1, bit 1
+bool engineWarningLight = false; // CAN ID 545: Byte 1, bit 4
+bool boostFailureLight = false;  // CAN ID 545: Byte 1, bit 5
+bool overheating = false;        // CAN ID 545: Byte 4, bit 3
+uint8_t manifoldPressure = 0;    // CAN ID 565: Byte 8, bits 0-7
+uint8_t fuelTankLevel = 0;       // CAN ID 613: Byte 3, bits 0-6
+bool switchFillingStatus = false;// CAN ID 613: Byte 3, bit 7
+bool handbrakeSwitch = false;    // CAN ID 615: Byte 5, bit 1
+uint8_t turnSignalIndicator = 0; // CAN ID 615: Byte 6, bits 1-2
+bool odbFault = false;           // CAN ID 615: Byte 6, bit 7
+uint8_t manualGearSelected = 0;  // CAN ID 618: Byte 2, bits 0-3
+bool requestAsc = false;         // CAN ID 153: Byte 1, bit 0
+bool requestMsr = false;         // CAN ID 153: Byte 1, bit 1
+bool ascLampStatus = false;      // CAN ID 153: Byte 2, bit 0
+uint8_t vehicleSpeed = 0;        // CAN ID 153: Byte 2, bits 3-7
+
 // Function prototypes
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
 void updateLEDs();
@@ -168,12 +188,89 @@ void loop() {
   esp_err_t result = twai_receive(&message, 0); // 0 ticks for non-blocking
   if (result == ESP_OK) {
     rxMsgCount++;
-    if (message.identifier == 0x316 && message.data_length_code >= 4) {
-      uint16_t raw_rpm = (message.data[3] << 8) | message.data[2];
-      rpm = raw_rpm / 6.4;
-      Serial.printf("CAN Msg: ID=0x%X, DLC=%d, Data=[%02X %02X %02X %02X], RPM=%d\n",
-                    message.identifier, message.data_length_code,
-                    message.data[0], message.data[1], message.data[2], message.data[3], rpm);
+    switch (message.identifier) {
+      case 0x316: // Existing RPM message
+        if (message.data_length_code >= 4) {
+          uint16_t raw_rpm = (message.data[3] << 8) | message.data[2];
+          rpm = raw_rpm / 6.4;
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, RPM=%d\n",
+                        message.identifier, message.data_length_code, rpm);
+        }
+        break;
+
+      case 0x329: // Coolant temp, angle FGR pedal, driver demand
+        if (message.data_length_code >= 7) {
+          coolantTemp = message.data[2]; // Byte 2, bits 0-7
+          angleFgrPedal = message.data[5]; // Byte 5, bits 0-7
+          driverDemand = message.data[6]; // Byte 6, bits 0-7
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, CoolantTemp=%d, AngleFgrPedal=%d, DriverDemand=%d\n",
+                        message.identifier, message.data_length_code, coolantTemp, angleFgrPedal, driverDemand);
+        }
+        break;
+
+      case 0x545: // Check engine light, engine warning light, boost failure light, overheating
+        if (message.data_length_code >= 5) {
+          checkEngineLight = (message.data[1] >> 1) & 0x01; // Byte 1, bit 1
+          engineWarningLight = (message.data[1] >> 4) & 0x01; // Byte 1, bit 4
+          boostFailureLight = (message.data[1] >> 5) & 0x01; // Byte 1, bit 5
+          overheating = (message.data[4] >> 3) & 0x01; // Byte 4, bit 3
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, CheckEngine=%d, EngWarning=%d, BoostFail=%d, Overheating=%d\n",
+                        message.identifier, message.data_length_code, checkEngineLight,
+                        engineWarningLight, boostFailureLight, overheating);
+        }
+        break;
+
+      case 0x565: // Manifold absolute pressure
+        if (message.data_length_code >= 8) {
+          manifoldPressure = message.data[7]; // Byte 8, bits 0-7 (byte indexing starts at 0)
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, ManifoldPressure=%d\n",
+                        message.identifier, message.data_length_code, manifoldPressure);
+        }
+        break;
+
+      case 0x613: // Fuel tank level, switch filling status
+        if (message.data_length_code >= 4) {
+          fuelTankLevel = message.data[3] & 0x7F; // Byte 3, bits 0-6
+          switchFillingStatus = (message.data[3] >> 7) & 0x01; // Byte 3, bit 7
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, FuelTankLevel=%d, SwitchFilling=%d\n",
+                        message.identifier, message.data_length_code, fuelTankLevel, switchFillingStatus);
+        }
+        break;
+
+      case 0x615: // Handbrake switch, turn signal indicator, OBD fault
+        if (message.data_length_code >= 7) {
+          handbrakeSwitch = (message.data[5] >> 1) & 0x01; // Byte 5, bit 1
+          turnSignalIndicator = (message.data[6] >> 1) & 0x03; // Byte 6, bits 1-2
+          odbFault = (message.data[6] >> 7) & 0x01; // Byte 6, bit 7
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, Handbrake=%d, TurnSignal=%d, ODBFault=%d\n",
+                        message.identifier, message.data_length_code, handbrakeSwitch,
+                        turnSignalIndicator, odbFault);
+        }
+        break;
+
+      case 0x618: // Manual gear selected
+        if (message.data_length_code >= 3) {
+          manualGearSelected = message.data[2] & 0x0F; // Byte 2, bits 0-3
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, ManualGear=%d\n",
+                        message.identifier, message.data_length_code, manualGearSelected);
+        }
+        break;
+
+      case 0x153: // Request ASC, request MSR, ASC lamp status, vehicle speed
+        if (message.data_length_code >= 3) {
+          requestAsc = (message.data[1] >> 0) & 0x01; // Byte 1, bit 0
+          requestMsr = (message.data[1] >> 1) & 0x01; // Byte 1, bit 1
+          ascLampStatus = (message.data[2] >> 0) & 0x01; // Byte 2, bit 0
+          vehicleSpeed = (message.data[2] >> 3) & 0x1F; // Byte 2, bits 3-7
+          Serial.printf("CAN Msg: ID=0x%X, DLC=%d, ASCReq=%d, MSRReq=%d, ASCLamp=%d, VehicleSpeed=%d\n",
+                        message.identifier, message.data_length_code, requestAsc, requestMsr,
+                        ascLampStatus, vehicleSpeed);
+        }
+        break;
+
+      default:
+        // Ignore other CAN IDs
+        break;
     }
   } else if (result != ESP_ERR_TIMEOUT) {
     errorCount++;
@@ -185,6 +282,14 @@ void loop() {
     Serial.printf("CAN Status: %s, Rx Count: %lu, Errors: %lu, Bus Errors: %lu, Rx Missed: %lu\n",
                   canConnected ? "Connected" : "Disconnected",
                   rxMsgCount, errorCount, status.bus_error_count, status.rx_missed_count);
+    Serial.printf("Signals: RPM=%d, CoolantTemp=%d, AngleFgrPedal=%d, DriverDemand=%d, "
+                  "CheckEngine=%d, EngWarning=%d, BoostFail=%d, Overheating=%d, ManifoldPressure=%d, "
+                  "FuelTankLevel=%d, SwitchFilling=%d, Handbrake=%d, TurnSignal=%d, "
+                  "ODBFault=%d, ManualGear=%d, ASCReq=%d, MSRReq=%d, ASCLamp=%d, VehicleSpeed=%d\n",
+                  rpm, coolantTemp, angleFgrPedal, driverDemand, checkEngineLight, engineWarningLight,
+                  boostFailureLight, overheating, manifoldPressure, fuelTankLevel,
+                  switchFillingStatus, handbrakeSwitch, turnSignalIndicator, odbFault,
+                  manualGearSelected, requestAsc, requestMsr, ascLampStatus, vehicleSpeed);
     lastDebugPrint = currentTime;
   }
 #endif
