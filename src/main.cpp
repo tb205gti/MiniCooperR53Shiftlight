@@ -365,8 +365,8 @@ void loop() {
 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   espNowError = (status != ESP_NOW_SEND_SUCCESS);
-  Serial.print("Last Packet Send Status: ");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  // Serial.print("Last Packet Send Status: ");
+  // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 void updateLEDs() {
