@@ -12,7 +12,7 @@
 #define WIFI_CHANNEL 1
 
 // Receiver ESP32 MAC Address (replace with actual MAC address)
-uint8_t receiverMacAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t receiverMacAddress[] = {0xCC, 0x8D, 0xA2, 0xEC, 0x75, 0xFC};
 
 // LED Pin Definitions
 #define LED_PIN GPIO_NUM_4      // GPIO4 for WS2812B data line
