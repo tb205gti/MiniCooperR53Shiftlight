@@ -1,21 +1,10 @@
+#include "config/user.h"
+#include "config/hardware.h"
+
 //#include <WiFi.h>
 #include <FastLED.h>
 #include <driver/twai.h>
 #include <driver/gpio.h>
-
-// Simulator option: Uncomment to simulate RPM, comment to use CAN bus
-//#define SIMULATE_RPM
-
-// LED Pin Definitions
-#define LED_PIN GPIO_NUM_4      // GPIO4 for WS2812B data line
-#define NUM_LEDS 8              // Number of LEDs in the strip
-#define LED_TYPE WS2812B
-#define COLOR_ORDER GRB
-#define STATUS_LED GPIO_NUM_21  // GPIO21 for built-in LED for CAN status
-
-// TWAI pin definitions using gpio_num_t
-#define TWAI_TX_PIN GPIO_NUM_5  // GPIO5 for TWAI TX
-#define TWAI_RX_PIN GPIO_NUM_6  // GPIO6 for TWAI RX
 
 // Timing variables for 10 Hz (100ms interval)
 unsigned long lastUpdateTime = 0;
@@ -49,7 +38,7 @@ CRGB leds[NUM_LEDS];
 bool ledsChanged = false; // Flag to track if LED state has changed
 
 // CAN signal variables
-uint16_t rpm = 0;                // CAN ID 316: Bytes 2-3
+uint16_t rpm = 0;  // CAN ID 316: Bytes 2-3
 
 // Function prototypes
 void updateLEDs();
@@ -65,7 +54,7 @@ void setup() {
 
   // Initialize FastLED
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(75);
+  FastLED.setBrightness(BRIGHTNESS);
 
 #ifndef SIMULATE_RPM
   // Initialize TWAI (CAN)
@@ -193,12 +182,12 @@ void updateLEDs() {
   int numPairs = constrain(map(rpm, 0, 7100, 0, 4), 0, 4);
 
   // Determine color based on RPM
-  if (rpm < 3500) {
+  if (rpm < STARTRPM) {
     color = CRGB(0, 0, 0);
-  } else if (rpm < 6000) {
+  } else if (rpm < MIDRPM) {
     color = CRGB(0, 255, 0);
-  } else if (rpm <= 7100) {
-    uint8_t t = map(rpm, 6000, 7100, 0, 255);
+  } else if (rpm <= MAXRPM) {
+    uint8_t t = map(rpm, MIDRPM, MAXRPM, 0, 255);
     color = CRGB(t, 255 - t, 0);
   } else {
     if (millis() - lastUpdateTime >= blinkInterval) {
