@@ -1,60 +1,83 @@
-#include "config/user.h"
-#include "config/hardware.h"
-
 //#include <WiFi.h>
-#include <FastLED.h>
-#include <driver/twai.h>
-#include <driver/gpio.h>
+#include "config/hardware.h"
+#include "config/user.h"
+#include "config/simulation.h"
+
+
 
 // Timing variables for 10 Hz (100ms interval)
 unsigned long lastUpdateTime = 0;
-const unsigned long updateInterval = 100; // 100ms = 10 Hz
-
-// LED timing variables
-const unsigned long blinkInterval = 100; // 100ms for 5Hz blink (on/off) at 7100+ RPM
 unsigned long lastStatusBlinkTime = 0;
-const unsigned long canBlinkInterval = 500;   // 1Hz (500ms on/off) for CAN error
 bool statusBlinkState = false;
-
-// RPM simulation timing
-unsigned long lastSimTime = 0;
-const unsigned long simInterval = 100; // Update simulation every 100ms (10 Hz)
-const unsigned long simPeriod = 10000; // 10-second cycle for RPM simulation
-
-// CAN bus debugging
 unsigned long lastDebugPrint = 0;
-const unsigned long debugInterval = 1000; // Debug output every 1s
 uint32_t rxMsgCount = 0; // Count of received messages
 uint32_t errorCount = 0; // Count of CAN errors
 bool canConnected = false; // CAN bus connection status
 
 // Logging for speeds
 unsigned long lastLogTime = 0;
-const unsigned long logInterval = 10000; // 10 seconds
 uint32_t canUpdateCount = 0;
 uint32_t canUpdateCountPrev = 0;
-
-CRGB leds[NUM_LEDS];
 bool ledsChanged = false; // Flag to track if LED state has changed
-
-// CAN signal variables
-uint16_t rpm = 0;  // CAN ID 316: Bytes 2-3
+uint16_t rpm = 0;                
 
 // Function prototypes
 void updateLEDs();
 void updateStatusLEDs();
 void simulateRPM();
+void bootAnimation();
+
+void bootAnimation(){
+    static uint32_t animatedelay = 60;
+  static uint32_t brightdelay = 20;
+
+  // Make a default startup sequence
+  for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i] = bootColor;
+        FastLED.show();
+        delay(animatedelay);
+      }
+  delay(150);
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i] = BLACK;
+        FastLED.show();
+        delay(animatedelay);
+      }
+
+  delay(100);
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i] = bootColor;
+      }
+
+  for (int i = 0; i<20; i++){
+    FastLED.setBrightness(i);
+    FastLED.show();
+    delay(brightdelay);
+  }
+
+  for (int i = 20; i>=0; i--){
+    FastLED.setBrightness(i);
+    FastLED.show();
+    delay(brightdelay);
+  }
+}
 
 void setup() {
-  Serial.begin(115200);
-  
+  Serial.begin(SERIAL_SPEED);
+
   // Initialize status LED
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW);
 
-  // Initialize FastLED
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(BRIGHTNESS);
+  FastLED.setBrightness(20);
+
+  bootAnimation();
+  FastLED.setBrightness(brightness);
+  //delay(1000);
+
 
 #ifndef SIMULATE_RPM
   // Initialize TWAI (CAN)
@@ -119,7 +142,7 @@ void loop() {
   if (result == ESP_OK) {
     rxMsgCount++;
     switch (message.identifier) {
-      case 0x316: // Existing RPM message
+      case CAN_RPM_ID: // Existing RPM message
         if (message.data_length_code >= 4) {
           uint16_t raw_rpm = (message.data[3] << 8) | message.data[2];
           rpm = raw_rpm / 6.4;
@@ -160,10 +183,11 @@ void loop() {
   }
 
   // Log average speeds every 10 seconds
-  if (currentTime - lastLogTime >= logInterval) {
+  if ((Serial) && currentTime - lastLogTime >= logInterval) {
     float elapsed = (float)(currentTime - lastLogTime) / 1000.0;
     float canHz = (float)(canUpdateCount - canUpdateCountPrev) / elapsed;
     Serial.printf("Average CAN update speed: %.2f Hz\n", canHz);
+    Serial.println("Rpm: "+ (String) rpm);
     canUpdateCountPrev = canUpdateCount;
     lastLogTime = currentTime;
   }
@@ -172,29 +196,37 @@ void loop() {
   vTaskDelay(1 / portTICK_PERIOD_MS);
 }
 
+void updateLEDs(bool bst){
+//Function to update if we need boost gauge..
+}
+
 void updateLEDs() {
   static int lastNumPairs = -1;
-  static CRGB lastColor = CRGB(0, 0, 0);
+  static CRGB lastColor = BLACK;
   static bool lastRedBlinkState = false;
   bool redBlinkState = false;
 
   CRGB color;
-  int numPairs = constrain(map(rpm, 0, 7100, 0, 4), 0, 4);
-
+  int numPairs = constrain(map(rpm, 0, HIGHRPM, 0, 4), 0, 4);
   // Determine color based on RPM
-  if (rpm < STARTRPM) {
-    color = CRGB(0, 0, 0);
-  } else if (rpm < MIDRPM) {
-    color = CRGB(0, 255, 0);
-  } else if (rpm <= MAXRPM) {
-    uint8_t t = map(rpm, MIDRPM, MAXRPM, 0, 255);
+  if (rpm < STALLED){
+    numPairs = 2;
+  }
+  else if (rpm < LOWRPM) {
+   color = BLACK;
+  }
+  else if (rpm < MIDRPM) {
+    color = MID_COLOR;
+
+  } else if (rpm <= HIGHRPM) {
+    uint8_t t = map(rpm, MIDRPM, HIGHRPM, 0, 255);
     color = CRGB(t, 255 - t, 0);
   } else {
     if (millis() - lastUpdateTime >= blinkInterval) {
       redBlinkState = !lastRedBlinkState;
       lastRedBlinkState = redBlinkState;
     }
-    color = redBlinkState ? CRGB(255, 0, 0) : CRGB(0, 0, 0);
+    color = redBlinkState ? HIGH_COLOR : BLACK;
     numPairs = 4;
   }
 
@@ -204,11 +236,12 @@ void updateLEDs() {
       leds[i] = CRGB(0, 0, 0);
       if (numPairs >= 1 && (i == 0 || i == 7)) leds[i] = color;
       if (numPairs >= 2 && (i == 1 || i == 6)) leds[i] = color;
+      if (rpm < STALLED && (numPairs >= 2 && (i == 3 || i == 4))) leds[i] = bootColor; //light two centers if engine has stalled
       if (numPairs >= 3 && (i == 2 || i == 5)) leds[i] = color;
       if (numPairs >= 4 && (i == 3 || i == 4)) leds[i] = color;
     }
     ledsChanged = true;
-    lastNumPairs = numPairs;
+    lastNumPairs = numPairs; 
     lastColor = color;
   }
 }
@@ -216,7 +249,7 @@ void updateLEDs() {
 void updateStatusLEDs() {
   unsigned long currentTime = millis();
 
-  // Status LED on GPIO 21: 
+  // Status LED on GPIO 8: 
   // - 1Hz blink (500ms on/off) for CAN error only
   if (!canConnected) {
     if (currentTime - lastStatusBlinkTime >= canBlinkInterval) { // 1Hz for CAN error
@@ -225,12 +258,12 @@ void updateStatusLEDs() {
       lastStatusBlinkTime = currentTime;
     }
   } else {
-    digitalWrite(STATUS_LED, LOW); // No errors, LED off
+    digitalWrite(STATUS_LED, HIGH); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
   }
 }
 
 void simulateRPM() {
   unsigned long cycleTime = millis() % simPeriod;
-  rpm = 1000 + (cycleTime * 8000 / simPeriod); // Linear ramp from 1000 to 9000 RPM
+  rpm = 1000 + (cycleTime * 12000 / simPeriod); // Linear ramp from 1000 to 9000 RPM
   canUpdateCount++;
 }
