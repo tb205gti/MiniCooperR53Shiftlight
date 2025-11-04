@@ -3,8 +3,6 @@
 #include "config/user.h"
 #include "config/simulation.h"
 
-
-
 // Timing variables for 10 Hz (100ms interval)
 unsigned long lastUpdateTime = 0;
 unsigned long lastStatusBlinkTime = 0;
@@ -28,7 +26,7 @@ void simulateRPM();
 void bootAnimation();
 
 void bootAnimation(){
-    static uint32_t animatedelay = 60;
+  static uint32_t animatedelay = 60;
   static uint32_t brightdelay = 20;
 
   // Make a default startup sequence
@@ -67,16 +65,19 @@ void bootAnimation(){
 void setup() {
   Serial.begin(SERIAL_SPEED);
 
-  // Initialize status LED
-  pinMode(STATUS_LED, OUTPUT);
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
 
-#if !CONFIG_IDF_TARGET_ESP32c3
+#if CONFIG_IDF_TARGET_ESP32S3
+  OBLED[0] = bootColor;
+  FastLED.addLeds<WS2812, STATUS_LED, RGB>(OBLED, 1); //Only for S3 variant!
+#elif !CONFIG_IDF_TARGET_ESP32c3
+  pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, HIGH);
 #else
+  pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, LOW);
 #endif
-  
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
+
   FastLED.setBrightness(20);
 
   bootAnimation();

@@ -1,7 +1,7 @@
 #pragma once
 
 // Simulator option: Uncomment to simulate RPM, comment to use CAN bus
-//#define SIMULATE_RPM
+#define SIMULATE_RPM
 
 // RPM simulation timing
 unsigned long lastSimTime = 0;

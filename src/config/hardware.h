@@ -13,7 +13,7 @@
   #define STATUS_LED GPIO_NUM_8  
 #elif CONFIG_IDF_TARGET_ESP32S3
   #define LED_PIN GPIO_NUM_2      
-  #define STATUS_LED GPIO_NUM_38  
+  #define STATUS_LED GPIO_NUM_21  
 #elif CONFIG_IDF_TARGET_ESP32c3
   #define LED_PIN GPIO_NUM_4      
   #define STATUS_LED GPIO_NUM_8   
@@ -35,3 +35,4 @@
 
 
 CRGB leds[NUM_LEDS];
+CRGB OBLED[1];
