@@ -260,14 +260,20 @@ void updateStatusLEDs() {
   if (!canConnected) {
     if (currentTime - lastStatusBlinkTime >= canBlinkInterval) { // 1Hz for CAN error
       statusBlinkState = !statusBlinkState;
-      digitalWrite(STATUS_LED, statusBlinkState ? HIGH : LOW);
+      #if CONFIG_IDF_TARGET_ESP32S3
+        OBLED[0] = statusBlinkState ? bootColor: BLACK;
+      #else
+        digitalWrite(STATUS_LED, statusBlinkState ? HIGH : LOW);
+      #endif
       lastStatusBlinkTime = currentTime;
     }
   } else {
     #if !CONFIG_IDF_TARGET_ESP32c3
       digitalWrite(STATUS_LED, LOW); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
+    #elif CONFIG_IDF_TARGET_ESP32S3
+      OBLED[0] = BLACK;
     #else
-      digitalWrite(STATUS_LED, HIGH); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
+      digitalWrite(STATUS_LED, HIGH); 
     #endif
   }
 }
