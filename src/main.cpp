@@ -69,8 +69,13 @@ void setup() {
 
   // Initialize status LED
   pinMode(STATUS_LED, OUTPUT);
-  digitalWrite(STATUS_LED, LOW);
 
+#if !CONFIG_IDF_TARGET_ESP32c3
+  digitalWrite(STATUS_LED, HIGH);
+#else
+  digitalWrite(STATUS_LED, LOW);
+#endif
+  
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   FastLED.setBrightness(20);
 
@@ -258,7 +263,11 @@ void updateStatusLEDs() {
       lastStatusBlinkTime = currentTime;
     }
   } else {
-    digitalWrite(STATUS_LED, HIGH); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
+    #if !CONFIG_IDF_TARGET_ESP32c3
+      digitalWrite(STATUS_LED, LOW); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
+    #else
+      digitalWrite(STATUS_LED, HIGH); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
+    #endif
   }
 }
 
