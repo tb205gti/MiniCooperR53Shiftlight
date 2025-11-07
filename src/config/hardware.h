@@ -14,7 +14,7 @@
 #elif CONFIG_IDF_TARGET_ESP32S3
   #define LED_PIN GPIO_NUM_2      
   #define STATUS_LED GPIO_NUM_21  
-#elif CONFIG_IDF_TARGET_ESP32c3
+#elif CONFIG_IDF_TARGET_ESP32C3
   #define LED_PIN GPIO_NUM_4      
   #define STATUS_LED GPIO_NUM_8   
 #endif

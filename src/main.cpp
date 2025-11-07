@@ -17,13 +17,20 @@ unsigned long lastLogTime = 0;
 uint32_t canUpdateCount = 0;
 uint32_t canUpdateCountPrev = 0;
 bool ledsChanged = false; // Flag to track if LED state has changed
-uint16_t rpm = 0;                
+uint16_t rpm = 0;        
+
+bool faderdone = false;
+bool boostGauge = true;
+bool shiftLight = false;
+unsigned char boost = 0;
+bool goingup = true;
 
 // Function prototypes
 void updateLEDs();
 void updateStatusLEDs();
 void simulateRPM();
 void bootAnimation();
+void showBoost();
 
 void bootAnimation(){
   static uint32_t animatedelay = 60;
@@ -60,6 +67,7 @@ void bootAnimation(){
     FastLED.show();
     delay(brightdelay);
   }
+  delay(500);
 }
 
 void setup() {
@@ -79,11 +87,7 @@ void setup() {
 #endif
 
   FastLED.setBrightness(20);
-
   bootAnimation();
-  FastLED.setBrightness(brightness);
-  //delay(1000);
-
 
 #ifndef SIMULATE_RPM
   // Initialize TWAI (CAN)
@@ -158,6 +162,8 @@ void loop() {
         }
         break;
 
+      case BOOST_CAN_ID:
+        //Do whatever we need with the boost data..
       default:
         // Ignore other CAN IDs
         break;
@@ -177,9 +183,26 @@ void loop() {
   }
 #endif
 
-  // Update LEDs at 10 Hz
+    if (!faderdone){
+      if (fadebright >= brightness){
+        //FastLED.setBrightness(brightness);  
+        faderdone = true;
+      }
+      else{
+        FastLED.setBrightness(fadebright);
+        FastLED.show();
+        delay(50);
+        fadebright += 2;
+      }
+    }
+
+  // Update LEDs at updateInterval 
   if (currentTime - lastUpdateTime >= updateInterval) {
-    updateLEDs();
+    if (shiftLight)
+     updateLEDs();
+    else if (boostGauge)
+      showBoost();
+
     updateStatusLEDs();
     if (ledsChanged) {
       FastLED.show();
@@ -196,14 +219,46 @@ void loop() {
     Serial.println("Rpm: "+ (String) rpm);
     canUpdateCountPrev = canUpdateCount;
     lastLogTime = currentTime;
+    shiftLight = !shiftLight;
+    boostGauge = !boostGauge;
   }
 
   // Yield to FreeRTOS scheduler to reduce CPU load
   vTaskDelay(1 / portTICK_PERIOD_MS);
 }
 
-void updateLEDs(bool bst){
-//Function to update if we need boost gauge..
+void showBoost(){
+  ledsChanged = false;
+  goingup? boost++:boost--;
+
+  if (boost >= 18){
+    goingup = false;
+  }
+  else if (boost <= 0)
+    goingup = true;
+
+  unsigned char numLeds = (unsigned char) boost / 2;
+  unsigned char dim = boost % 2;
+
+  leds[0] = BOOST_LOW;
+  leds[1] = BOOST_LOW;
+  leds[2] = BOOST_LOW;
+  leds[3] = BOOST_MID;
+  leds[4] = BOOST_MID;
+  leds[5] = BOOST_HIGH;
+  leds[6] = BOOST_HIGH;
+  leds[7] = BOOST_TOP;
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    if (i == numLeds && dim){
+      leds[i].nscale8(20);
+    }
+    else if (i > numLeds-1)
+      leds[i] = BLACK;
+  }
+
+
+  ledsChanged = true;
 }
 
 void updateLEDs() {
@@ -214,16 +269,14 @@ void updateLEDs() {
 
   CRGB color;
   int numPairs = constrain(map(rpm, 0, HIGHRPM, 0, 4), 0, 4);
+  blinkInterval = constrain(blinkInterval,0,updateInterval);
   // Determine color based on RPM
-  if (rpm < STALLED){
+  if (rpm < STALLED)
     numPairs = 2;
-  }
-  else if (rpm < LOWRPM) {
+  else if (rpm < LOWRPM)
    color = BLACK;
-  }
   else if (rpm < MIDRPM) {
     color = MID_COLOR;
-
   } else if (rpm <= HIGHRPM) {
     uint8_t t = map(rpm, MIDRPM, HIGHRPM, 0, 255);
     color = CRGB(t, 255 - t, 0);
@@ -242,7 +295,7 @@ void updateLEDs() {
       leds[i] = CRGB(0, 0, 0);
       if (numPairs >= 1 && (i == 0 || i == 7)) leds[i] = color;
       if (numPairs >= 2 && (i == 1 || i == 6)) leds[i] = color;
-      if (rpm < STALLED && (numPairs >= 2 && (i == 3 || i == 4))) leds[i] = bootColor; //light two centers if engine has stalled
+      if (rpm < STALLED && (numPairs >= 2 && (i == 3 || i == 4))) leds[i] = STALL_COLOR; //light two centers if engine has stalled
       if (numPairs >= 3 && (i == 2 || i == 5)) leds[i] = color;
       if (numPairs >= 4 && (i == 3 || i == 4)) leds[i] = color;
     }
