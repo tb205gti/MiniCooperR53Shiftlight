@@ -23,7 +23,7 @@ bool faderdone = false;
 bool boostGauge = true;
 bool coolantGauge = false;
 unsigned char boost = 0;
-unsigned char coolant = 90;
+unsigned char coolantTemp = 90;
 bool goingup = true;
 
 // Function prototypes
@@ -169,7 +169,23 @@ void loop() {
         break;
 
       case BOOST_CAN_ID:
-        //Do whatever we need with the boost data..
+        if (message.data_length_code >= 9){  //TODO Test off-by-one..
+            uint8_t raw_boost = message.data[8];
+            boost = (unsigned char) (raw_boost);
+            Serial.printf("CAN Msg: ID=0x%X, DLC=%d, Boost=%d\n",
+                        message.identifier, message.data_length_code, boost);
+          canUpdateCount++;
+          }
+        break;
+        case COOLANT_CAN_ID:
+          if (message.data_length_code >= 2){
+            uint8_t raw_temp = message.data[1]; //TODO: Test if we have it in byte 1 or 2
+            coolantTemp = (unsigned char) (raw_temp * 0.4865);
+            Serial.printf("CAN Msg: ID=0x%X, DLC=%d, Coolant Temp=%d\n",
+                        message.identifier, message.data_length_code, coolantTemp);
+          canUpdateCount++;
+          }
+        break;
       default:
         // Ignore other CAN IDs
         break;
