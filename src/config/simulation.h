@@ -1,8 +1,7 @@
 #pragma once
 
-#if !CONFIG_IDF_TARGET_ESP32S3_SIMULATION
-  #define SIMULATE_RPM
-#endif
+#define SIMULATE_RPM
+
 
 // RPM simulation timing
 unsigned long lastSimTime = 0;

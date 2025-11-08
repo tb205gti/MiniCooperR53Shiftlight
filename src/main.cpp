@@ -20,8 +20,8 @@ bool ledsChanged = false; // Flag to track if LED state has changed
 uint16_t rpm = 0;        
 
 bool faderdone = false;
-bool boostGauge = true;
-bool coolantGauge = false;
+bool boostGauge = false;
+bool coolantGauge = true;
 unsigned char boost = 0;
 unsigned char coolantTemp = 90;
 bool goingup = true;
@@ -35,6 +35,7 @@ void showBoost();
 void showCoolant();
 void simulateBoost();
 void simulateCoolant();
+void turnOffLEDS();
 
 void bootAnimation(){
   const static uint32_t animatedelay = 60;
@@ -53,7 +54,6 @@ void bootAnimation(){
         FastLED.show();
         delay(animatedelay);
       }
-
   delay(100);
 
   for (int i = 0; i < NUM_LEDS; i++) {
@@ -71,7 +71,19 @@ void bootAnimation(){
     FastLED.show();
     delay(brightdelay);
   }
+  turnOffLEDS();
   delay(500);
+}
+
+void turnOffLEDS(){
+  leds[0] = BLACK;
+  leds[1] = BLACK;
+  leds[2] = BLACK;
+  leds[3] = BLACK;
+  leds[4] = BLACK;
+  leds[5] = BLACK;
+  leds[6] = BLACK;
+  leds[7] = BLACK;  
 }
 
 void setup() {
@@ -79,10 +91,10 @@ void setup() {
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S3_SIMULATION
   OBLED[0] = bootColor;
   FastLED.addLeds<WS2812, STATUS_LED, RGB>(OBLED, 1); //Only for S3 variant!
-#elif !CONFIG_IDF_TARGET_ESP32c3
+#elif !CONFIG_IDF_TARGET_ESP32C3
   pinMode(STATUS_LED, OUTPUT);
   digitalWrite(STATUS_LED, HIGH);
 #else
@@ -222,8 +234,8 @@ void loop() {
     
     if (boostGauge)
       showBoost();
-   // else if (coolantGauge)
-   //   showCoolant();
+    else if (coolantGauge)
+      showCoolant();
     else
       updateLEDs();
 
@@ -273,8 +285,6 @@ void showBoost(){
     else if (i > numLeds-1)
       leds[i] = BLACK;
   }
-
-
   ledsChanged = true;
 }
 
@@ -282,26 +292,22 @@ void showCoolant(){
   //Since we use blue, we must turn down the brightness..
   ledsChanged = false;
 
-  unsigned char numLeds = 3;
-  unsigned char dim = 1;
+  unsigned char numLeds = 5;
+  unsigned char dim = 0;
 
-  for (int i=0;i<NUM_LEDS;i++){
-    
-    if (i >= numLeds)
-      leds[i] = BLACK;
-    else
+  turnOffLEDS();
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    if (i < numLeds){
       leds[i] = COOLANT_COL;
-
-    //leds[i].nscale8(24);
+      leds[i].nscale8(128);
+    }
+    else if (i == numLeds && dim > 0){
+      leds[i] = COOLANT_COL;
+      leds[i].nscale8(24);
+    }
   }
 
-  // for (int i = 0; i < NUM_LEDS; i++) {
-  //   if (i == numLeds && dim > 0){
-  //     leds[i].nscale8(28);
-  //   }
-  //   else if (i > numLeds-1)
-  //     leds[i] = BLACK;
-  // }
   ledsChanged = true;
 }
 
@@ -352,7 +358,6 @@ void updateLEDs() {
 void updateStatusLEDs() {
   unsigned long currentTime = millis();
 
-  // Status LED on GPIO 8: 
   // - 1Hz blink (500ms on/off) for CAN error only
   if (!canConnected) {
     if (currentTime - lastStatusBlinkTime >= canBlinkInterval) { // 1Hz for CAN error
@@ -365,10 +370,10 @@ void updateStatusLEDs() {
       lastStatusBlinkTime = currentTime;
     }
   } else {
-    #if !CONFIG_IDF_TARGET_ESP32c3
-      digitalWrite(STATUS_LED, LOW); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
-    #elif CONFIG_IDF_TARGET_ESP32S3
+    #if CONFIG_IDF_TARGET_ESP32S3
       OBLED[0] = BLACK;
+    #elif !CONFIG_IDF_TARGET_ESP32C3
+      digitalWrite(STATUS_LED, LOW); // No errors, LED off (ESP32C3 has reversed LED logic, HIGH is off..)
     #else
       digitalWrite(STATUS_LED, HIGH); 
     #endif
