@@ -21,8 +21,9 @@ uint16_t rpm = 0;
 
 bool faderdone = false;
 bool boostGauge = true;
-bool shiftLight = false;
+bool coolantGauge = false;
 unsigned char boost = 0;
+unsigned char coolant = 90;
 bool goingup = true;
 
 // Function prototypes
@@ -31,10 +32,13 @@ void updateStatusLEDs();
 void simulateRPM();
 void bootAnimation();
 void showBoost();
+void showCoolant();
+void simulateBoost();
+void simulateCoolant();
 
 void bootAnimation(){
-  static uint32_t animatedelay = 60;
-  static uint32_t brightdelay = 20;
+  const static uint32_t animatedelay = 60;
+  const static uint32_t brightdelay = 20;
 
   // Make a default startup sequence
   for (int i = 0; i < NUM_LEDS; i++) {
@@ -122,6 +126,8 @@ void loop() {
   // Simulate RPM
   if (currentTime - lastSimTime >= simInterval) {
     simulateRPM();
+    simulateBoost();
+    simulateCoolant();
     lastSimTime = currentTime;
   }
 #else
@@ -185,7 +191,6 @@ void loop() {
 
     if (!faderdone){
       if (fadebright >= brightness){
-        //FastLED.setBrightness(brightness);  
         faderdone = true;
       }
       else{
@@ -198,10 +203,13 @@ void loop() {
 
   // Update LEDs at updateInterval 
   if (currentTime - lastUpdateTime >= updateInterval) {
-    if (shiftLight)
-     updateLEDs();
-    else if (boostGauge)
+    
+    if (boostGauge)
       showBoost();
+   // else if (coolantGauge)
+   //   showCoolant();
+    else
+      updateLEDs();
 
     updateStatusLEDs();
     if (ledsChanged) {
@@ -219,8 +227,8 @@ void loop() {
     Serial.println("Rpm: "+ (String) rpm);
     canUpdateCountPrev = canUpdateCount;
     lastLogTime = currentTime;
-    shiftLight = !shiftLight;
-    boostGauge = !boostGauge;
+    //boostGauge = !boostGauge;
+    //coolantGauge = !coolantGauge;
   }
 
   // Yield to FreeRTOS scheduler to reduce CPU load
@@ -229,13 +237,6 @@ void loop() {
 
 void showBoost(){
   ledsChanged = false;
-  goingup? boost++:boost--;
-
-  if (boost >= 18){
-    goingup = false;
-  }
-  else if (boost <= 0)
-    goingup = true;
 
   unsigned char numLeds = (unsigned char) boost / 2;
   unsigned char dim = boost % 2;
@@ -250,7 +251,7 @@ void showBoost(){
   leds[7] = BOOST_TOP;
 
   for (int i = 0; i < NUM_LEDS; i++) {
-    if (i == numLeds && dim){
+    if (i == numLeds && dim > 0){
       leds[i].nscale8(20);
     }
     else if (i > numLeds-1)
@@ -258,6 +259,33 @@ void showBoost(){
   }
 
 
+  ledsChanged = true;
+}
+
+void showCoolant(){
+  //Since we use blue, we must turn down the brightness..
+  ledsChanged = false;
+
+  unsigned char numLeds = 3;
+  unsigned char dim = 1;
+
+  for (int i=0;i<NUM_LEDS;i++){
+    
+    if (i >= numLeds)
+      leds[i] = BLACK;
+    else
+      leds[i] = COOLANT_COL;
+
+    //leds[i].nscale8(24);
+  }
+
+  // for (int i = 0; i < NUM_LEDS; i++) {
+  //   if (i == numLeds && dim > 0){
+  //     leds[i].nscale8(28);
+  //   }
+  //   else if (i > numLeds-1)
+  //     leds[i] = BLACK;
+  // }
   ledsChanged = true;
 }
 
@@ -335,4 +363,20 @@ void simulateRPM() {
   unsigned long cycleTime = millis() % simPeriod;
   rpm = 1000 + (cycleTime * 12000 / simPeriod); // Linear ramp from 1000 to 9000 RPM
   canUpdateCount++;
+}
+
+void simulateBoost(){
+  goingup? boost++:boost--;
+
+  if (boost >= 18){
+    goingup = false;
+  }
+  else if (boost <= 0)
+    goingup = true;
+
+  canUpdateCount++;
+}
+
+void simulateCoolant(){
+
 }
