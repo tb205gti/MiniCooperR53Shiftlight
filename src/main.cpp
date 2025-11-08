@@ -21,7 +21,7 @@ uint16_t rpm = 0;
 
 bool faderdone = false;
 bool boostGauge = false;
-bool coolantGauge = true;
+bool coolantGauge = false;
 unsigned char boost = 0;
 unsigned char coolantTemp = 90;
 bool goingup = true;
@@ -326,7 +326,7 @@ void updateLEDs() {
   else if (rpm < LOWRPM)
    color = BLACK;
   else if (rpm < MIDRPM) {
-    color = MID_COLOR;
+    color = RPM_MID;
   } else if (rpm <= HIGHRPM) {
     uint8_t t = map(rpm, MIDRPM, HIGHRPM, 0, 255);
     color = CRGB(t, 255 - t, 0);
@@ -335,7 +335,7 @@ void updateLEDs() {
       redBlinkState = !lastRedBlinkState;
       lastRedBlinkState = redBlinkState;
     }
-    color = redBlinkState ? HIGH_COLOR : BLACK;
+    color = redBlinkState ? RPM_HIGH : BLACK;
     numPairs = 4;
   }
 
@@ -345,7 +345,7 @@ void updateLEDs() {
       leds[i] = CRGB(0, 0, 0);
       if (numPairs >= 1 && (i == 0 || i == 7)) leds[i] = color;
       if (numPairs >= 2 && (i == 1 || i == 6)) leds[i] = color;
-      if (rpm < STALLED && (numPairs >= 2 && (i == 3 || i == 4))) leds[i] = STALL_COLOR; //light two centers if engine has stalled
+      if (rpm < STALLED && (numPairs >= 2 && (i == 3 || i == 4))) leds[i] = RPM_STALL; //light two centers if engine has stalled
       if (numPairs >= 3 && (i == 2 || i == 5)) leds[i] = color;
       if (numPairs >= 4 && (i == 3 || i == 4)) leds[i] = color;
     }

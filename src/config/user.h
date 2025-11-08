@@ -6,7 +6,7 @@
 #define HIGHRPM 7100
 
 unsigned char brightness = 25;
-unsigned char fadebright = 0;
+unsigned char fadebright = 5;
 const unsigned long canBlinkInterval = 500;   // 1Hz (500ms on/off) for CAN error
 unsigned long blinkInterval = 75; // 100ms for 5Hz blink (on/off) at HIGHRPM+ RPM
 unsigned long updateInterval = 75; // 100ms = 10 Hz
@@ -16,10 +16,10 @@ const unsigned long logInterval = 10000; // 10 seconds
 static CRGB bootColor = CRGB(255, 29, 0);
 //static CRGB bootColor = CRGB(246, 0, 255);
 static CRGB BLACK = CRGB(0, 0, 0);
-static CRGB STALL_COLOR = CRGB(155, 29, 0);
-static CRGB LOW_COLOR = CRGB(255, 229, 0); //0 29 0
-static CRGB MID_COLOR = CRGB(0, 255, 0); 
-static CRGB HIGH_COLOR = CRGB(255, 0, 0);
+static CRGB RPM_STALL = CRGB(155, 29, 0);
+static CRGB RPM_LOW = CRGB(255, 229, 0); //0 29 0
+static CRGB RPM_MID = CRGB(0, 255, 0); 
+static CRGB RPM_HIGH = CRGB(255, 0, 0);
 
 // static CRGB BOOST_LOW = CRGB(0, 255, 0);
 // static CRGB BOOST_MID = CRGB(255, 229, 0);
@@ -31,4 +31,5 @@ static CRGB BOOST_MID = CRGB(255, 29, 0);
 static CRGB BOOST_HIGH = CRGB(255, 29, 0);
 static CRGB BOOST_TOP = CRGB(255, 29, 0);
 
-static CRGB COOLANT_COL = CRGB(50, 121, 168);
+//static CRGB COOLANT_COL = CRGB(50, 121, 168); //181, 85, 29
+static CRGB COOLANT_COL = CRGB(245, 24, 2);
