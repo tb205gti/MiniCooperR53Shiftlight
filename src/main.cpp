@@ -22,8 +22,8 @@ uint16_t rpm = 0;
 bool faderdone = false;
 bool boostGauge = false;
 bool coolantGauge = false;
-unsigned char boost = 0;
-unsigned char coolantTemp = 90;
+unsigned char boost = 7;
+unsigned char coolantTemp = 88;
 bool goingup = true;
 
 // Function prototypes
@@ -104,6 +104,8 @@ void setup() {
 
   FastLED.setBrightness(20);
   bootAnimation();
+
+  brightness = constrain(brightness,3,98);
 
 #ifndef SIMULATE_RPM
   // Initialize TWAI (CAN)
@@ -265,7 +267,6 @@ void loop() {
 
 void showBoost(){
   ledsChanged = false;
-
   unsigned char numLeds = (unsigned char) boost / 2;
   unsigned char dim = boost % 2;
 
@@ -291,11 +292,13 @@ void showBoost(){
 void showCoolant(){
   //Since we use blue, we must turn down the brightness..
   ledsChanged = false;
-
-  unsigned char numLeds = 5;
-  unsigned char dim = 0;
-
   turnOffLEDS();
+
+  //start at 85 end 105, each led is 2.5 degC
+  if (coolantTemp <= 85)
+    return;
+  unsigned char numLeds = (unsigned char) (coolantTemp - 85)/2.5;
+  unsigned char dim = 0; // coolantTemp - (numLeds*14);
 
   for (int i = 0; i < NUM_LEDS; i++) {
     if (i < numLeds){
